@@ -13,8 +13,8 @@ use crate::{
 };
 
 pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
-    let ethhdr: &EthHdr = unsafe { ref_at(ctx, 0) }?;
-    match ethhdr.ether_type {
+    let eth_hdr: &EthHdr = unsafe { ref_at(ctx, 0) }?;
+    match eth_hdr.ether_type {
         EtherType::Ipv4 => {}
         _ => return Ok(xdp_action::XDP_PASS),
     }
