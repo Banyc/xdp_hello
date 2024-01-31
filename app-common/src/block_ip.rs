@@ -1,6 +1,6 @@
 use network_types::ip::Ipv4Hdr;
 
-pub type BpfBlockIp = aya_bpf::maps::HashMap<u32, u32>;
+type BpfBlockIp = aya_bpf::maps::HashMap<u32, u32>;
 #[aya_bpf::macros::map]
 static BLOCK_IP: BpfBlockIp = BpfBlockIp::with_max_entries(1024, 0);
 pub fn blocked(ip_hdr: &Ipv4Hdr) -> bool {
