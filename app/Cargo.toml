@@ -14,7 +14,3 @@ env_logger = "0.11"
 libc = "0.2"
 log = "0.4"
 tokio = { version = "1.25", features = ["macros", "rt", "rt-multi-thread", "net", "signal"] }
-
-[[bin]]
-name = "app"
-path = "src/main.rs"

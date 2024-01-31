@@ -2,7 +2,7 @@ use std::net::Ipv4Addr;
 
 use anyhow::Context;
 use app::spawn_bpf;
-use app_common::block_ip::UserBlockIp;
+use app_common::allow_ip::UserAllowIp;
 use clap::Parser;
 use log::info;
 use tokio::signal;
@@ -19,10 +19,11 @@ async fn main() -> Result<(), anyhow::Error> {
 
     env_logger::init();
 
-    let mut bpf = spawn_bpf(&opt.iface)?;
+    let mut bpf = spawn_bpf(&opt.iface, "ddos_mitigation")?;
 
-    let mut block_ip = UserBlockIp::try_bind(&mut bpf).context("user block ip")?;
-    block_ip.insert(Ipv4Addr::new(1, 1, 1, 1));
+    let mut allow_ip = UserAllowIp::try_bind(&mut bpf).context("user allow ip")?;
+    allow_ip.insert_restricted_port(53);
+    allow_ip.insert_allowed_ip(Ipv4Addr::new(1, 1, 1, 1).into());
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;

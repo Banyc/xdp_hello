@@ -19,6 +19,9 @@ pub struct Options {
     /// Arguments to pass to your application
     #[clap(name = "args", last = true)]
     pub run_args: Vec<String>,
+    /// Binary to run
+    #[clap(long)]
+    pub bin: String,
 }
 
 /// Build the project
@@ -47,7 +50,7 @@ pub fn run(opts: Options) -> Result<(), anyhow::Error> {
 
     // profile we are building (release or debug)
     let profile = if opts.release { "release" } else { "debug" };
-    let bin_path = format!("target/{profile}/app");
+    let bin_path = format!("target/{profile}/{bin}", bin = opts.bin);
 
     // arguments to pass to the application
     let mut run_args: Vec<_> = opts.run_args.iter().map(String::as_str).collect();

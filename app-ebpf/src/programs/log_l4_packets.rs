@@ -24,7 +24,7 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     let l4_protocol = ipv4_hdr.proto;
 
     let l4_hdr_offset = EthHdr::LEN + Ipv4Hdr::LEN;
-    let src_port: u16 = match l4_protocol {
+    let be_src_port: u16 = match l4_protocol {
         IpProto::Tcp => {
             let tcp_hdr: &TcpHdr = unsafe { ref_at(ctx, l4_hdr_offset) }?;
             tcp_hdr.source
@@ -35,6 +35,7 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
         }
         _ => return Ok(xdp_action::XDP_PASS),
     };
+    let src_port = u16::from_be(be_src_port);
 
     info!(ctx, "SRC IP: {:i}, SRC PORT: {}", src_ip, src_port);
     Ok(xdp_action::XDP_PASS)

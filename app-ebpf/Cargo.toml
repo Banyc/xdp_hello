@@ -9,10 +9,6 @@ aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
 app-common = { path = "../app-common" }
 network-types = "0.0.5"
 
-[[bin]]
-name = "app"
-path = "src/main.rs"
-
 [profile.dev]
 opt-level = 3
 debug = false
