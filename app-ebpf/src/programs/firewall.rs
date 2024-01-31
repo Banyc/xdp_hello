@@ -19,13 +19,13 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     }
 
     let ipv4_hdr: &Ipv4Hdr = unsafe { ref_at(ctx, EthHdr::LEN) }?;
-    let src_ip = u32::from_be(ipv4_hdr.src_addr);
 
-    let action = match block_ip::blocked(src_ip) {
+    let action = match block_ip::blocked(ipv4_hdr) {
         true => xdp_action::XDP_DROP,
         false => xdp_action::XDP_PASS,
     };
 
+    let src_ip = u32::from_be(ipv4_hdr.src_addr);
     info!(ctx, "SRC IP: {:i}, ACTION: {}", src_ip, action);
     Ok(action)
 }

@@ -22,8 +22,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut bpf = spawn_bpf(&opt.iface)?;
 
     let mut block_ip = UserBlockIp::try_bind(&mut bpf).context("user block ip")?;
-    let ones = Ipv4Addr::new(1, 1, 1, 1).try_into()?;
-    block_ip.insert(ones);
+    block_ip.insert(Ipv4Addr::new(1, 1, 1, 1));
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
