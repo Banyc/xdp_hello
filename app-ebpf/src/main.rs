@@ -7,7 +7,8 @@ use aya_bpf::{macros::xdp, programs::XdpContext};
 #[xdp]
 pub fn app(ctx: XdpContext) -> u32 {
     // start(&ctx, app_ebpf::programs::log_unparsed_packets::main)
-    start(&ctx, app_ebpf::programs::log_l4_packets::main)
+    // start(&ctx, app_ebpf::programs::log_l4_packets::main)
+    start(&ctx, app_ebpf::programs::firewall::main)
 }
 
 #[panic_handler]
