@@ -84,4 +84,8 @@ impl<'map> UserAllowIp<'map> {
     pub fn remove_restricted_port(&mut self, port: u16) {
         self.port_map.remove(&port).unwrap();
     }
+
+    pub fn restricted_ports(&self) -> Vec<u16> {
+        self.port_map.keys().collect::<Result<_, _>>().unwrap()
+    }
 }
