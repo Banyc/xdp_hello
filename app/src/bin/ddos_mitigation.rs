@@ -51,6 +51,11 @@ async fn main() -> anyhow::Result<()> {
 
 pub type BpfMapHandle = Arc<Mutex<UserAllowIp<'static>>>;
 
+/// Throughput gauges toggle `/port` to restrict traffic on DDoS and relax the restriction periodically to check if the DDoS has stopped
+///
+/// Applications toggle `/ip` to trust IPs of the legit users so that when the restriction is on, the applications can still serve those users
+///
+/// Admins check `/ports` to see what ports have been restricted to either monitor or debug
 async fn serve(allow_ip: BpfMapHandle) -> anyhow::Result<()> {
     let router = Router::new()
         .route("/ports", get(ports))
