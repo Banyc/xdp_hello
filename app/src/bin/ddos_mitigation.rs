@@ -1,5 +1,5 @@
 use std::{
-    net::Ipv4Addr,
+    net::{IpAddr, Ipv4Addr},
     sync::{Arc, Mutex},
 };
 
@@ -56,6 +56,8 @@ async fn serve(allow_ip: BpfMapHandle) -> anyhow::Result<()> {
         .route("/ports", get(ports))
         .route("/port/:port", put(put_port))
         .route("/port/:port", delete(delete_port))
+        .route("/ip/:ip", put(trust_ip))
+        .route("/ip/:ip", delete(forget_ip))
         .with_state(allow_ip);
     let listener = TcpListener::bind("127.0.0.1:6969").await?;
     axum::serve(listener, router).await?;
@@ -78,4 +80,16 @@ async fn put_port(State(allow_ip): State<BpfMapHandle>, Path(port): Path<u16>) {
 async fn delete_port(State(allow_ip): State<BpfMapHandle>, Path(port): Path<u16>) {
     let mut allow_ip = allow_ip.lock().unwrap();
     allow_ip.remove_restricted_port(port);
+}
+
+/// Let this IP pass even if the local port is restricted
+async fn trust_ip(State(allow_ip): State<BpfMapHandle>, Path(ip): Path<IpAddr>) {
+    let mut allow_ip = allow_ip.lock().unwrap();
+    allow_ip.insert_allowed_ip(ip);
+}
+
+/// Remove the privilege of this IP from being unrestricted
+async fn forget_ip(State(allow_ip): State<BpfMapHandle>, Path(ip): Path<IpAddr>) {
+    let mut allow_ip = allow_ip.lock().unwrap();
+    allow_ip.remove_allowed_ip(ip);
 }

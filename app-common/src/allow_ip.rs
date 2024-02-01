@@ -77,12 +77,25 @@ impl<'map> UserAllowIp<'map> {
         }
     }
 
+    pub fn remove_allowed_ip(&mut self, ip: std::net::IpAddr) {
+        match ip {
+            std::net::IpAddr::V4(ip) => {
+                let ip: u32 = ip.into();
+                let _ = self.ipv4_map.remove(&ip);
+            }
+            std::net::IpAddr::V6(ip) => {
+                let ip: u128 = ip.into();
+                let _ = self.ipv6_map.remove(&ip);
+            }
+        }
+    }
+
     pub fn insert_restricted_port(&mut self, port: u16) {
         self.port_map.insert(port, 0, 0).unwrap();
     }
 
     pub fn remove_restricted_port(&mut self, port: u16) {
-        self.port_map.remove(&port).unwrap();
+        let _ = self.port_map.remove(&port);
     }
 
     pub fn restricted_ports(&self) -> Vec<u16> {
