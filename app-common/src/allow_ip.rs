@@ -36,7 +36,7 @@ pub struct UserAllowIp<'map> {
     ipv4_map: aya::maps::HashMap<&'map mut aya::maps::MapData, u32, u32>,
     /// Allowed IPs
     ipv6_map: aya::maps::HashMap<&'map mut aya::maps::MapData, u128, u32>,
-    /// Restriction identifying ports
+    /// Restriction identifying local ports
     port_map: aya::maps::HashMap<&'map mut aya::maps::MapData, u16, u32>,
 }
 #[cfg(feature = "user")]

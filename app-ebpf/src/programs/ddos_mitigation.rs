@@ -19,17 +19,15 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     let (ip_hdr, port) = match eth_hdr.ether_type {
         EtherType::Ipv4 => {
             let ipv4_hdr: &Ipv4Hdr = unsafe { ref_at(ctx, EthHdr::LEN) }?;
-            (
-                IpHdr::Ipv4(ipv4_hdr),
-                port_from_ip_proto(ctx, ipv4_hdr.proto, Ipv4Hdr::LEN)?,
-            )
+            (IpHdr::Ipv4(ipv4_hdr), unsafe {
+                port_from_ip_proto(ctx, ipv4_hdr.proto, Ipv4Hdr::LEN)
+            }?)
         }
         EtherType::Ipv6 => {
             let ipv6_hdr: &Ipv6Hdr = unsafe { ref_at(ctx, EthHdr::LEN) }?;
-            (
-                IpHdr::Ipv6(ipv6_hdr),
-                port_from_ip_proto(ctx, ipv6_hdr.next_hdr, Ipv6Hdr::LEN)?,
-            )
+            (IpHdr::Ipv6(ipv6_hdr), unsafe {
+                port_from_ip_proto(ctx, ipv6_hdr.next_hdr, Ipv6Hdr::LEN)
+            }?)
         }
         _ => return Ok(xdp_action::XDP_PASS),
     };
@@ -61,7 +59,13 @@ enum IpHdr<'a> {
     Ipv6(&'a Ipv6Hdr),
 }
 
-fn port_from_ip_proto(
+/// # Safety
+///
+/// Make sure:
+/// - `ctx` is an Ethernet packet
+/// - `l4_proto` is extracted from the right position in `ctx`
+/// - `ip_hdr_len` is the length of the IP header in `ctx`
+unsafe fn port_from_ip_proto(
     ctx: &XdpContext,
     l4_proto: IpProto,
     ip_hdr_len: usize,
