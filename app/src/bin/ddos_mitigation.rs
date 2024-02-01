@@ -6,7 +6,11 @@ use std::{
 use anyhow::Context;
 use app::spawn_bpf;
 use app_common::allow_ip::UserAllowIp;
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{
+    extract::{Path, State},
+    routing::{delete, get, put},
+    Json, Router,
+};
 use clap::Parser;
 use log::info;
 use tokio::net::TcpListener;
@@ -50,6 +54,8 @@ pub type BpfMapHandle = Arc<Mutex<UserAllowIp<'static>>>;
 async fn serve(allow_ip: BpfMapHandle) -> anyhow::Result<()> {
     let router = Router::new()
         .route("/ports", get(ports))
+        .route("/port/:port", put(put_port))
+        .route("/port/:port", delete(delete_port))
         .with_state(allow_ip);
     let listener = TcpListener::bind("127.0.0.1:6969").await?;
     axum::serve(listener, router).await?;
@@ -60,4 +66,16 @@ async fn serve(allow_ip: BpfMapHandle) -> anyhow::Result<()> {
 async fn ports(State(allow_ip): State<BpfMapHandle>) -> Json<Vec<u16>> {
     let allow_ip = allow_ip.lock().unwrap();
     Json(allow_ip.restricted_ports())
+}
+
+/// Restrict a port
+async fn put_port(State(allow_ip): State<BpfMapHandle>, Path(port): Path<u16>) {
+    let mut allow_ip = allow_ip.lock().unwrap();
+    allow_ip.insert_restricted_port(port);
+}
+
+/// Relax a port
+async fn delete_port(State(allow_ip): State<BpfMapHandle>, Path(port): Path<u16>) {
+    let mut allow_ip = allow_ip.lock().unwrap();
+    allow_ip.remove_restricted_port(port);
 }
