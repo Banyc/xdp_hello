@@ -1,4 +1,5 @@
 use app_common::{
+    address::IpAddr,
     allow_ip::{self, ip_allowed},
     gauge::{increment_packets, MapInsertionError},
 };
@@ -25,11 +26,17 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     let allowed = ip_allowed(&tuple);
     let action = match allowed {
         true => {
-            info!(ctx, "PASS on local port {}", tuple.dst.port);
+            match tuple.src.ip {
+                IpAddr::Ipv4(ip) => info!(ctx, "PASS {:i} on local port {}", ip, tuple.dst.port),
+                IpAddr::Ipv6(_) => info!(ctx, "PASS on local port {}", tuple.dst.port),
+            }
             xdp_action::XDP_PASS
         }
         false => {
-            info!(ctx, "DROP on local port {}", tuple.dst.port);
+            match tuple.src.ip {
+                IpAddr::Ipv4(ip) => info!(ctx, "DROP {:i} on local port {}", ip, tuple.dst.port),
+                IpAddr::Ipv6(_) => info!(ctx, "DROP on local port {}", tuple.dst.port),
+            }
             xdp_action::XDP_DROP
         }
     };

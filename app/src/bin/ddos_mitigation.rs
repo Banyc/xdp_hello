@@ -1,6 +1,8 @@
 use std::{
-    net::{IpAddr, Ipv4Addr},
+    collections::HashMap,
+    net::IpAddr,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -19,6 +21,12 @@ use tokio::net::TcpListener;
 struct Opt {
     #[clap(short, long, default_value = "eth0")]
     iface: String,
+    /// Ports to monitor and potentially restrict
+    #[clap(long)]
+    port: Vec<u16>,
+    /// The threshold packets per second to activate the restriction
+    #[clap(long)]
+    pps: f64,
 }
 
 #[tokio::main]
@@ -31,12 +39,44 @@ async fn main() -> anyhow::Result<()> {
 
     let gauge = UserGauge::try_bind(&mut bpf).context("user gauge")?;
 
-    let mut allow_ip = UserAllowIp::try_bind(&mut bpf).context("user allow ip")?;
-    allow_ip.insert_restricted_port(443);
-    allow_ip.insert_allowed_ip(Ipv4Addr::new(1, 1, 1, 1).into());
+    let allow_ip = UserAllowIp::try_bind(&mut bpf).context("user allow ip")?;
+    // allow_ip.insert_restricted_port(443);
+    // allow_ip.insert_allowed_ip(Ipv4Addr::new(1, 1, 1, 1).into());
 
     let gauge: GaugeHandle = Arc::new(Mutex::new(gauge));
     let allow_ip: AllowIpHandle = Arc::new(Mutex::new(allow_ip));
+
+    tokio::spawn({
+        let gauge = gauge.clone();
+        let allow_ip = allow_ip.clone();
+        let mut last_amount = HashMap::new();
+        let interval = Duration::from_secs(5);
+        let threshold_pps = opt.pps;
+        let ports = opt.port.clone();
+        async move {
+            loop {
+                tokio::time::sleep(interval).await;
+                for port in &ports {
+                    let prev = last_amount.get(port).copied().unwrap_or_default();
+                    let now = {
+                        let gauge = gauge.lock().unwrap();
+                        gauge.packets(*port)
+                    };
+                    last_amount.insert(*port, now);
+                    if now < prev {
+                        continue;
+                    }
+                    let pps = (now - prev) as f64 / interval.as_secs_f64();
+                    let mut allow_ip = allow_ip.lock().unwrap();
+                    if pps < threshold_pps {
+                        allow_ip.remove_restricted_port(*port);
+                    } else {
+                        allow_ip.insert_restricted_port(*port);
+                    }
+                }
+            }
+        }
+    });
 
     info!("Waiting for Ctrl-C...");
     tokio::select! {
@@ -60,6 +100,8 @@ pub type AllowIpHandle = Arc<Mutex<UserAllowIp>>;
 /// Applications toggle `/ip` to trust IPs of the legit users so that when the restriction is on, the applications can still serve those users
 ///
 /// Admins check `/ports` to see what ports have been restricted to either monitor or debug
+///
+/// Admins check `/packets` to check the received amount of packets on a specific port
 async fn serve(gauge: GaugeHandle, allow_ip: AllowIpHandle) -> anyhow::Result<()> {
     let router = Router::new()
         .route("/packets/:port", get(packets))
@@ -89,24 +131,28 @@ async fn ports(State(allow_ip): State<AllowIpHandle>) -> Json<Vec<u16>> {
 
 /// Restrict a port
 async fn put_port(State(allow_ip): State<AllowIpHandle>, Path(port): Path<u16>) {
+    info!("Restrict {port}");
     let mut allow_ip = allow_ip.lock().unwrap();
     allow_ip.insert_restricted_port(port);
 }
 
 /// Relax a port
 async fn delete_port(State(allow_ip): State<AllowIpHandle>, Path(port): Path<u16>) {
+    info!("Relax {port}");
     let mut allow_ip = allow_ip.lock().unwrap();
     allow_ip.remove_restricted_port(port);
 }
 
 /// Let this IP pass even if the local port is restricted
 async fn trust_ip(State(allow_ip): State<AllowIpHandle>, Path(ip): Path<IpAddr>) {
+    info!("Trust {ip}");
     let mut allow_ip = allow_ip.lock().unwrap();
     allow_ip.insert_allowed_ip(ip);
 }
 
 /// Remove the privilege of this IP from being unrestricted
 async fn forget_ip(State(allow_ip): State<AllowIpHandle>, Path(ip): Path<IpAddr>) {
+    info!("Forget {ip}");
     let mut allow_ip = allow_ip.lock().unwrap();
     allow_ip.remove_allowed_ip(ip);
 }
