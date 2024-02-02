@@ -4,6 +4,7 @@ use aya_bpf::{bindings::xdp_action, programs::XdpContext};
 use aya_log_ebpf::error;
 use error::AbortMsg;
 
+pub mod address;
 pub mod error;
 pub mod mem;
 pub mod programs;

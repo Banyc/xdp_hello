@@ -1,5 +1,7 @@
 use network_types::ip::{Ipv4Hdr, Ipv6Hdr};
 
+use crate::address::{FiveTuple, IpAddr};
+
 const MAX_ENTRIES: u32 = 1024;
 
 type BpfRestrictedPort = aya_bpf::maps::HashMap<u16, u32>;
@@ -23,6 +25,13 @@ static IPV6_ALLOW_IP: BpfIpv6AllowIp = BpfIpv6AllowIp::with_max_entries(MAX_ENTR
 pub fn ipv6_allowed(ip_hdr: &Ipv6Hdr) -> bool {
     let src_ip = u128::from_be_bytes(unsafe { ip_hdr.src_addr.in6_u.u6_addr8 });
     unsafe { IPV6_ALLOW_IP.get(&src_ip) }.is_some()
+}
+
+pub fn ip_allowed(tuple: &FiveTuple) -> bool {
+    match tuple.src.ip {
+        IpAddr::Ipv4(ip) => unsafe { IPV4_ALLOW_IP.get(&ip) }.is_some(),
+        IpAddr::Ipv6(ip) => unsafe { IPV6_ALLOW_IP.get(&ip) }.is_some(),
+    }
 }
 
 #[cfg(feature = "user")]
