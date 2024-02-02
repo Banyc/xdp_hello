@@ -14,6 +14,7 @@ pub fn increment_packets(port: u16) -> Result<(), MapInsertionError> {
         .insert(&port, &packets, 0)
         .map_err(|_| MapInsertionError)
 }
+#[derive(Debug, Clone, Copy)]
 pub struct MapInsertionError;
 
 #[cfg(feature = "user")]
