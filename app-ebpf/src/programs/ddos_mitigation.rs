@@ -1,8 +1,11 @@
 use app_common::allow_ip::{self, ip_allowed};
 use aya_bpf::{bindings::xdp_action, programs::XdpContext};
-use aya_log_ebpf::info;
 
-use crate::{address::five_tuple, error::AbortMsg, mem::PointedOutOfRange};
+use crate::{
+    address::{five_tuple, log_five_tuple},
+    error::AbortMsg,
+    mem::PointedOutOfRange,
+};
 
 pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     // Parse port number from the packet
@@ -15,7 +18,7 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    info!(ctx, "ENTERED RESTRICTED PORT: {}", tuple.dst.port);
+    log_five_tuple(ctx, &tuple);
 
     // Only allow trusted source IPs
     let allowed = ip_allowed(&tuple);

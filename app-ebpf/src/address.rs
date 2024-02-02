@@ -1,5 +1,6 @@
 use app_common::address::{Address, FiveTuple, IpAddr, L4Protocol};
 use aya_bpf::programs::XdpContext;
+use aya_log_ebpf::info;
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr, Ipv6Hdr},
@@ -8,6 +9,25 @@ use network_types::{
 };
 
 use crate::mem::{ref_at, PointedOutOfRange};
+
+pub fn log_five_tuple(ctx: &XdpContext, tuple: &FiveTuple) {
+    let p = match tuple.protocol {
+        L4Protocol::Tcp => "TCP",
+        L4Protocol::Udp => "UDP",
+    };
+    let src_ip = match tuple.src.ip {
+        IpAddr::Ipv4(ip) => ip,
+        IpAddr::Ipv6(_ip) => 0,
+    };
+    let dst_ip = match tuple.dst.ip {
+        IpAddr::Ipv4(ip) => ip,
+        IpAddr::Ipv6(_ip) => 0,
+    };
+    info!(
+        ctx,
+        "{},{:i}:{},{:i}:{}", p, src_ip, tuple.src.port, dst_ip, tuple.dst.port
+    );
+}
 
 /// Extract the five-tuple from the packet
 pub fn five_tuple(ctx: &XdpContext) -> Result<Option<FiveTuple>, PointedOutOfRange> {
