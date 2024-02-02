@@ -40,32 +40,24 @@ pub fn ip_allowed(tuple: &FiveTuple) -> bool {
 /// So that when network access is restricted, the application is still available to them
 ///
 /// Restriction is identified by an ingress port
-pub struct UserAllowIp<'map> {
+pub struct UserAllowIp {
     /// Allowed IPs
-    ipv4_map: aya::maps::HashMap<&'map mut aya::maps::MapData, u32, u32>,
+    ipv4_map: aya::maps::HashMap<aya::maps::MapData, u32, u32>,
     /// Allowed IPs
-    ipv6_map: aya::maps::HashMap<&'map mut aya::maps::MapData, u128, u32>,
+    ipv6_map: aya::maps::HashMap<aya::maps::MapData, u128, u32>,
     /// Restriction identifying local ports
-    port_map: aya::maps::HashMap<&'map mut aya::maps::MapData, u16, u32>,
+    port_map: aya::maps::HashMap<aya::maps::MapData, u16, u32>,
 }
 #[cfg(feature = "user")]
-impl<'map> UserAllowIp<'map> {
-    pub fn try_bind(bpf: &'map mut aya::Bpf) -> Option<Self> {
-        let mut ipv4_map = None;
-        let mut ipv6_map = None;
-        let mut port_map = None;
-        for (name, map) in bpf.maps_mut() {
-            match name {
-                "IPV4_ALLOW_IP" => ipv4_map = Some(map),
-                "IPV6_ALLOW_IP" => ipv6_map = Some(map),
-                "RESTRICTED_PORT" => port_map = Some(map),
-                _ => (),
-            }
-        }
+impl UserAllowIp {
+    pub fn try_bind(bpf: &mut aya::Bpf) -> Option<Self> {
+        let ipv4_map = bpf.take_map("IPV4_ALLOW_IP")?;
+        let ipv6_map = bpf.take_map("IPV6_ALLOW_IP")?;
+        let port_map = bpf.take_map("RESTRICTED_PORT")?;
 
-        let ipv4_map = aya::maps::HashMap::try_from(ipv4_map?).ok()?;
-        let ipv6_map = aya::maps::HashMap::try_from(ipv6_map?).ok()?;
-        let port_map = aya::maps::HashMap::try_from(port_map?).ok()?;
+        let ipv4_map = aya::maps::HashMap::try_from(ipv4_map).ok()?;
+        let ipv6_map = aya::maps::HashMap::try_from(ipv6_map).ok()?;
+        let port_map = aya::maps::HashMap::try_from(port_map).ok()?;
         Some(Self {
             ipv4_map,
             ipv6_map,
