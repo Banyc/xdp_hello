@@ -1,11 +1,8 @@
 use app_common::allow_ip::{self, ip_allowed};
 use aya_bpf::{bindings::xdp_action, programs::XdpContext};
+use aya_log_ebpf::info;
 
-use crate::{
-    address::{five_tuple, log_five_tuple},
-    error::AbortMsg,
-    mem::PointedOutOfRange,
-};
+use crate::{address::five_tuple, error::AbortMsg, mem::PointedOutOfRange};
 
 pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     // Parse port number from the packet
@@ -18,13 +15,17 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    log_five_tuple(ctx, &tuple);
-
     // Only allow trusted source IPs
     let allowed = ip_allowed(&tuple);
     let action = match allowed {
-        true => xdp_action::XDP_PASS,
-        false => xdp_action::XDP_DROP,
+        true => {
+            info!(ctx, "PASS on local port {}", tuple.dst.port);
+            xdp_action::XDP_PASS
+        }
+        false => {
+            info!(ctx, "DROP on local port {}", tuple.dst.port);
+            xdp_action::XDP_DROP
+        }
     };
     Ok(action)
 }
