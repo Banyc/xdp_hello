@@ -1,6 +1,6 @@
 use network_types::ip::{Ipv4Hdr, Ipv6Hdr};
 
-use crate::address::{FiveTuple, IpAddr};
+use crate::address::IpAddr;
 
 const MAX_ENTRIES: u32 = 1024;
 
@@ -20,8 +20,8 @@ pub fn ipv6_allowed(ip_hdr: &Ipv6Hdr) -> bool {
     unsafe { IPV6_ALLOW_IP.get(&src_ip) }.is_some()
 }
 
-pub fn ip_allowed(tuple: &FiveTuple) -> bool {
-    match tuple.src.ip {
+pub fn ip_allowed(ip: IpAddr) -> bool {
+    match ip {
         IpAddr::Ipv4(ip) => unsafe { IPV4_ALLOW_IP.get(&ip) }.is_some(),
         IpAddr::Ipv6(ip) => unsafe { IPV6_ALLOW_IP.get(&ip) }.is_some(),
     }

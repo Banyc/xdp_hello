@@ -24,7 +24,7 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     }
 
     // Only allow trusted source IPs
-    let allowed = ip_allowed(&tuple);
+    let allowed = ip_allowed(tuple.src.ip);
     let action = match allowed {
         true => {
             match tuple.src.ip {

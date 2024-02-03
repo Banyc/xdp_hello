@@ -1,3 +1,4 @@
+pub mod cf_rate_limit;
 pub mod ddos_mitigation;
 pub mod firewall;
 pub mod gauge;
