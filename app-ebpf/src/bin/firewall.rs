@@ -1,10 +1,6 @@
 #![no_std]
 #![no_main]
 
-use app_ebpf::start;
-use aya_bpf::{macros::xdp, programs::XdpContext};
+use app_ebpf::xdp_program;
 
-#[xdp]
-pub fn firewall(ctx: XdpContext) -> u32 {
-    start(&ctx, app_ebpf::programs::firewall::main)
-}
+xdp_program!(firewall);

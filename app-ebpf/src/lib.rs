@@ -26,3 +26,16 @@ pub fn start<E: AbortMsg>(
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     unsafe { core::hint::unreachable_unchecked() }
 }
+
+#[macro_export]
+macro_rules! xdp_program {
+    ($name: ident) => {
+        use app_ebpf::start;
+        use aya_bpf::{macros::xdp, programs::XdpContext};
+
+        #[xdp]
+        pub fn $name(ctx: XdpContext) -> u32 {
+            start(&ctx, app_ebpf::programs::$name::main)
+        }
+    };
+}
