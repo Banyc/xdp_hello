@@ -5,3 +5,4 @@ pub mod allow_ip;
 pub mod block_ip;
 pub mod gauge;
 pub mod restricted_port;
+pub mod trim_ascii;
