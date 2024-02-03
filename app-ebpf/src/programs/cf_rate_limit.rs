@@ -2,14 +2,13 @@ use core::slice;
 
 use app_common::{
     address::{IpAddr, L4Protocol},
-    allow_ip::ip_allowed,
+    allow_ascii_ip::{ascii_ip_allowed, AsciiIp, NotAnAsciiIp},
     gauge::{increment_packets, MapInsertionError},
     restricted_port,
-    trim_ascii::trim_ascii,
+    trim_ascii::{trim_ascii_end, trim_ascii_start},
 };
 use aya_bpf::{bindings::xdp_action, programs::XdpContext};
 use aya_log_ebpf::info;
-use bstr::ByteSlice;
 use network_types::{
     eth::EthHdr,
     ip::{Ipv4Hdr, Ipv6Hdr},
@@ -32,7 +31,7 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    // crop out the header value that contains the IP string
+    // Crop out the header value that contains the IP string
     if matches!(tuple.protocol, L4Protocol::Udp) {
         return Ok(xdp_action::XDP_PASS);
     }
@@ -46,19 +45,29 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     };
     let tcp_data_remaining: &[u8] =
         unsafe { slice::from_raw_parts(tcp_data_start as *const u8, tcp_data_remaining) };
-    let Some((_, ip_str_remaining)) = tcp_data_remaining.split_once_str("CF-Connecting-IP:") else {
+    const SRC_IP_HEADER_KEY: &str = "CF-Connecting-IP:";
+    let Some(ip_str_start) = tcp_data_remaining
+        .windows(SRC_IP_HEADER_KEY.len())
+        .position(|s| s == SRC_IP_HEADER_KEY.as_bytes())
+        .map(|x| x + SRC_IP_HEADER_KEY.len())
+    else {
         return Ok(xdp_action::XDP_PASS);
     };
-    let Some((_, ip_str)) = ip_str_remaining.split_once_str("\n") else {
+    let ip_str_remaining = &tcp_data_remaining[ip_str_start..];
+    let Some(ip_str_end) = ip_str_remaining.iter().position(|c| *c == b'\n') else {
         return Ok(xdp_action::XDP_PASS);
     };
+    let ip_str = &ip_str_remaining[..ip_str_end];
 
-    let Some(ip) = IpAddr::from_ascii(trim_ascii(ip_str)) else {
-        return Ok(xdp_action::XDP_PASS);
-    };
+    // Trim out the white spaces
+    let start = trim_ascii_start(ip_str);
+    let end = trim_ascii_end(ip_str);
+    let ip_str = &ip_str[start..end];
+
+    let ip_str = AsciiIp::from_ascii(ip_str)?;
 
     // Only allow trusted source IPs
-    let allowed = ip_allowed(ip);
+    let allowed = ascii_ip_allowed(&ip_str);
     let action = match allowed {
         true => {
             match tuple.src.ip {
@@ -82,12 +91,14 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
 pub enum ParseError {
     Mem(PointedOutOfRange),
     Map(MapInsertionError),
+    ParseIp(NotAnAsciiIp),
 }
 impl AbortMsg for ParseError {
     fn err_msg(&self) -> &'static str {
         match self {
             ParseError::Mem(_) => "pointed value out of range",
             ParseError::Map(_) => "failed to insert value to a map",
+            ParseError::ParseIp(_) => "failed to parse IP from the HTTP header",
         }
     }
 }
@@ -99,5 +110,10 @@ impl From<PointedOutOfRange> for ParseError {
 impl From<MapInsertionError> for ParseError {
     fn from(value: MapInsertionError) -> Self {
         Self::Map(value)
+    }
+}
+impl From<NotAnAsciiIp> for ParseError {
+    fn from(value: NotAnAsciiIp) -> Self {
+        Self::ParseIp(value)
     }
 }

@@ -8,7 +8,6 @@ aya-bpf = { git = "https://github.com/aya-rs/aya" }
 aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
 app-common = { path = "../app-common" }
 network-types = "0.0.5"
-bstr = { version = "1", default-features = false }
 
 [profile.dev]
 opt-level = 3
