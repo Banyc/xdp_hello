@@ -1,23 +1,23 @@
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FiveTuple {
     pub protocol: L4Protocol,
     pub src: Address,
     pub dst: Address,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum L4Protocol {
     Tcp,
     Udp,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Address {
     pub ip: IpAddr,
     pub port: u16,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IpAddr {
     Ipv4(u32),
     Ipv6(u128),
@@ -62,6 +62,19 @@ impl<'a> IpParser<'a> {
     }
 }
 impl IpParser<'_> {
+    /// Run a parser, and restore the pre-parse state if it fails.
+    fn read_atomically<T, F>(&mut self, inner: F) -> Option<T>
+    where
+        F: FnOnce(&mut IpParser<'_>) -> Option<T>,
+    {
+        let state = self.state;
+        let result = inner(self);
+        if result.is_none() {
+            self.state = state;
+        }
+        result
+    }
+
     /// Peek the next character from the input
     fn peek_char(&self) -> Option<char> {
         self.state.first().map(|&b| char::from(b))
@@ -78,8 +91,10 @@ impl IpParser<'_> {
     #[must_use]
     /// Read the next character from the input if it matches the target.
     fn read_given_char(&mut self, target: char) -> Option<()> {
-        self.read_char()
-            .and_then(|c| if c == target { Some(()) } else { None })
+        self.read_atomically(|p| {
+            p.read_char()
+                .and_then(|c| if c == target { Some(()) } else { None })
+        })
     }
 
     /// Helper for reading separators in an indexed loop. Reads the separator
@@ -88,12 +103,14 @@ impl IpParser<'_> {
     /// read_ipv4_addr for an example)
     fn read_separator<T, F>(&mut self, sep: char, index: usize, inner: F) -> Option<T>
     where
-        F: FnOnce(&mut Self) -> Option<T>,
+        F: FnOnce(&mut IpParser<'_>) -> Option<T>,
     {
-        if index > 0 {
-            self.read_given_char(sep)?;
-        }
-        inner(self)
+        self.read_atomically(move |p| {
+            if index > 0 {
+                p.read_given_char(sep)?;
+            }
+            inner(p)
+        })
     }
 
     // Read a number off the front of the input in the given radix, stopping
@@ -105,44 +122,48 @@ impl IpParser<'_> {
         max_digits: Option<usize>,
         allow_zero_prefix: bool,
     ) -> Option<T> {
-        let mut result = T::ZERO;
-        let mut digit_count = 0;
-        let has_leading_zero = self.peek_char() == Some('0');
+        self.read_atomically(move |p| {
+            let mut result = T::ZERO;
+            let mut digit_count = 0;
+            let has_leading_zero = p.peek_char() == Some('0');
 
-        while let Some(digit) = self.read_char()?.to_digit(radix) {
-            result = result.checked_mul(radix)?;
-            result = result.checked_add(digit)?;
-            digit_count += 1;
-            if let Some(max_digits) = max_digits {
-                if digit_count > max_digits {
-                    return None;
+            while let Some(digit) = p.read_atomically(|p| p.read_char()?.to_digit(radix)) {
+                result = result.checked_mul(radix)?;
+                result = result.checked_add(digit)?;
+                digit_count += 1;
+                if let Some(max_digits) = max_digits {
+                    if digit_count > max_digits {
+                        return None;
+                    }
                 }
             }
-        }
 
-        #[allow(clippy::if_same_then_else)]
-        if digit_count == 0 {
-            None
-        } else if !allow_zero_prefix && has_leading_zero && digit_count > 1 {
-            None
-        } else {
-            Some(result)
-        }
+            #[allow(clippy::if_same_then_else)]
+            if digit_count == 0 {
+                None
+            } else if !allow_zero_prefix && has_leading_zero && digit_count > 1 {
+                None
+            } else {
+                Some(result)
+            }
+        })
     }
 
     /// Read an IPv4 address.
     fn read_ipv4_addr(&mut self) -> Option<u32> {
-        let mut groups = [0_u8; 4];
+        self.read_atomically(|p| {
+            let mut groups = [0_u8; 4];
 
-        for (i, slot) in groups.iter_mut().enumerate() {
-            *slot = self.read_separator('.', i, |p| {
-                // Disallow octal number in IP string.
-                // https://tools.ietf.org/html/rfc6943#section-3.1.1
-                p.read_number(10, Some(3), false)
-            })?;
-        }
+            for (i, slot) in groups.iter_mut().enumerate() {
+                *slot = p.read_separator('.', i, |p| {
+                    // Disallow octal number in IP string.
+                    // https://tools.ietf.org/html/rfc6943#section-3.1.1
+                    p.read_number(10, Some(3), false)
+                })?;
+            }
 
-        Some(u32::from_be_bytes(groups))
+            Some(u32::from_be_bytes(groups))
+        })
     }
 
     /// Read an IPv6 Address.
@@ -189,35 +210,37 @@ impl IpParser<'_> {
             u128::from_be_bytes(bytes)
         }
 
-        // Read the front part of the address; either the whole thing, or up
-        // to the first ::
-        let mut head = [0; 8];
-        let (head_size, head_ipv4) = read_groups(self, &mut head);
+        self.read_atomically(|p| {
+            // Read the front part of the address; either the whole thing, or up
+            // to the first ::
+            let mut head = [0; 8];
+            let (head_size, head_ipv4) = read_groups(p, &mut head);
 
-        if head_size == 8 {
-            return Some(ipv6_from_u16_array(head));
-        }
+            if head_size == 8 {
+                return Some(ipv6_from_u16_array(head));
+            }
 
-        // IPv4 part is not allowed before `::`
-        if head_ipv4 {
-            return None;
-        }
+            // IPv4 part is not allowed before `::`
+            if head_ipv4 {
+                return None;
+            }
 
-        // Read `::` if previous code parsed less than 8 groups.
-        // `::` indicates one or more groups of 16 bits of zeros.
-        self.read_given_char(':')?;
-        self.read_given_char(':')?;
+            // Read `::` if previous code parsed less than 8 groups.
+            // `::` indicates one or more groups of 16 bits of zeros.
+            p.read_given_char(':')?;
+            p.read_given_char(':')?;
 
-        // Read the back part of the address. The :: must contain at least one
-        // set of zeroes, so our max length is 7.
-        let mut tail = [0; 7];
-        let limit = 8 - (head_size + 1);
-        let (tail_size, _) = read_groups(self, &mut tail[..limit]);
+            // Read the back part of the address. The :: must contain at least one
+            // set of zeroes, so our max length is 7.
+            let mut tail = [0; 7];
+            let limit = 8 - (head_size + 1);
+            let (tail_size, _) = read_groups(p, &mut tail[..limit]);
 
-        // Concat the head and tail of the IP address
-        head[(8 - tail_size)..8].copy_from_slice(&tail[..tail_size]);
+            // Concat the head and tail of the IP address
+            head[(8 - tail_size)..8].copy_from_slice(&tail[..tail_size]);
 
-        Some(ipv6_from_u16_array(head))
+            Some(ipv6_from_u16_array(head))
+        })
     }
 
     /// Read an IP Address, either IPv4 or IPv6.
@@ -234,7 +257,17 @@ mod tests {
 
     #[test]
     fn test_ascii() {
-        let ip = "1.1.1.1";
-        IpAddr::from_ascii(ip.as_bytes()).unwrap();
+        let ip = "127.0.0.1";
+        let ip = IpAddr::from_ascii(ip.as_bytes()).unwrap();
+        assert_eq!(ip, IpAddr::Ipv4(u32::from_be_bytes([127, 0, 0, 1])));
+
+        let ip = "2001:db8::1";
+        let ip = IpAddr::from_ascii(ip.as_bytes()).unwrap();
+        assert_eq!(
+            ip,
+            IpAddr::Ipv6(u128::from_be_bytes([
+                0x20, 0x01, 0xd, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+            ]))
+        );
     }
 }
