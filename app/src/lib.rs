@@ -33,7 +33,7 @@ pub fn spawn_bpf(iface: &str, bin: &str) -> Result<Bpf, anyhow::Error> {
         // This can happen if you remove all log statements from your eBPF program.
         warn!("failed to initialize eBPF logger: {}", e);
     }
-    let program: &mut Xdp = bpf.program_mut("app").unwrap().try_into()?;
+    let program: &mut Xdp = bpf.program_mut(bin).unwrap().try_into()?;
     program.load()?;
     program.attach(iface, XdpFlags::default())
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
