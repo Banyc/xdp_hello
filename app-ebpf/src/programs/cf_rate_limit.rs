@@ -53,16 +53,33 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     else {
         return Ok(xdp_action::XDP_PASS);
     };
-    let ip_str_remaining = &tcp_data_remaining[ip_str_start..];
+    // let ip_str_remaining = &tcp_data_remaining[ip_str_start..];
+    let Some(ip_str_remaining) = tcp_data_remaining.len().checked_sub(ip_str_start) else {
+        return Ok(xdp_action::XDP_PASS);
+    };
+    let ip_str_remaining = unsafe {
+        slice::from_raw_parts(
+            tcp_data_remaining
+                .as_ptr()
+                .offset(isize::try_from(ip_str_start).unwrap()),
+            ip_str_remaining,
+        )
+    };
     let Some(ip_str_end) = ip_str_remaining.iter().position(|c| *c == b'\n') else {
         return Ok(xdp_action::XDP_PASS);
     };
-    let ip_str = &ip_str_remaining[..ip_str_end];
+    // let ip_str = &ip_str_remaining[..ip_str_end];
+    let ip_str = unsafe { slice::from_raw_parts(ip_str_remaining.as_ptr(), ip_str_end) };
 
     // Trim out the white spaces
     let start = trim_ascii_start(ip_str);
     let end = trim_ascii_end(ip_str);
-    let ip_str = &ip_str[start..end];
+    // let ip_str = &ip_str[start..end];
+    let ip_str = unsafe { slice::from_raw_parts(ip_str.as_ptr(), end) };
+    let len = end.checked_sub(start).unwrap();
+    let ip_str = unsafe {
+        slice::from_raw_parts(ip_str.as_ptr().offset(isize::try_from(start).unwrap()), len)
+    };
 
     let ip_str = AsciiIp::from_ascii(ip_str)?;
 
