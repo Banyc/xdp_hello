@@ -18,6 +18,7 @@ pub fn increment_packets(port: u16) -> Result<(), MapInsertionError> {
 pub struct MapInsertionError;
 
 #[cfg(feature = "user")]
+#[derive(Debug)]
 pub struct UserGauge {
     packets_per_port: aya::maps::HashMap<aya::maps::MapData, u16, u64>,
 }

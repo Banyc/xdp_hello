@@ -1,7 +1,8 @@
 use app_common::{
     address::IpAddr,
-    allow_ip::{self, ip_allowed},
+    allow_ip::ip_allowed,
     gauge::{increment_packets, MapInsertionError},
+    restricted_port,
 };
 use aya_bpf::{bindings::xdp_action, programs::XdpContext};
 use aya_log_ebpf::info;
@@ -18,7 +19,7 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     increment_packets(tuple.dst.port)?;
 
     // Pass all traffic through unrestricted ports
-    if !allow_ip::port_restricted(tuple.dst.port) {
+    if !restricted_port::port_restricted(tuple.dst.port) {
         return Ok(xdp_action::XDP_PASS);
     }
 

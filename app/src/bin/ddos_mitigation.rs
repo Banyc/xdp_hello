@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::Context;
 use app::spawn_bpf;
-use app_common::{allow_ip::UserAllowIp, gauge::UserGauge};
+use app_common::{allow_ip::UserAllowIp, gauge::UserGauge, restricted_port::UserRestrictedPort};
 use axum::{
     extract::{Path, State},
     routing::{delete, get, put},
@@ -38,17 +38,17 @@ async fn main() -> anyhow::Result<()> {
     let mut bpf = spawn_bpf(&opt.iface, "ddos_mitigation")?;
 
     let gauge = UserGauge::try_bind(&mut bpf).context("user gauge")?;
-
+    let restricted_port = UserRestrictedPort::try_bind(&mut bpf).context("user restricted port")?;
     let allow_ip = UserAllowIp::try_bind(&mut bpf).context("user allow ip")?;
-    // allow_ip.insert_restricted_port(443);
-    // allow_ip.insert_allowed_ip(Ipv4Addr::new(1, 1, 1, 1).into());
 
-    let gauge: GaugeHandle = Arc::new(Mutex::new(gauge));
-    let allow_ip: AllowIpHandle = Arc::new(Mutex::new(allow_ip));
+    let handle_context = HandleContext {
+        gauge: Arc::new(Mutex::new(gauge)),
+        restricted_port: Arc::new(Mutex::new(restricted_port)),
+        allow_ip: Arc::new(Mutex::new(allow_ip)),
+    };
 
     tokio::spawn({
-        let gauge = gauge.clone();
-        let allow_ip = allow_ip.clone();
+        let handle_context = handle_context.clone();
         let mut last_amount = HashMap::new();
         let interval = Duration::from_secs(5);
         let threshold_pps = opt.pps;
@@ -59,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
                 for port in &ports {
                     let prev = last_amount.get(port).copied().unwrap_or_default();
                     let now = {
-                        let gauge = gauge.lock().unwrap();
+                        let gauge = handle_context.gauge.lock().unwrap();
                         gauge.packets(*port)
                     };
                     last_amount.insert(*port, now);
@@ -67,11 +67,11 @@ async fn main() -> anyhow::Result<()> {
                         continue;
                     }
                     let pps = (now - prev) as f64 / interval.as_secs_f64();
-                    let mut allow_ip = allow_ip.lock().unwrap();
+                    let mut restrict_port = handle_context.restricted_port.lock().unwrap();
                     if pps < threshold_pps {
-                        allow_ip.remove_restricted_port(*port);
+                        restrict_port.remove_restricted_port(*port);
                     } else {
-                        allow_ip.insert_restricted_port(*port);
+                        restrict_port.insert_restricted_port(*port);
                     }
                 }
             }
@@ -83,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
         res = tokio::signal::ctrl_c() => {
             res?;
         }
-        res = serve(gauge, allow_ip) => {
+        res = serve(handle_context) => {
             res?;
         }
     }
@@ -92,8 +92,16 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub type GaugeHandle = Arc<Mutex<UserGauge>>;
-pub type AllowIpHandle = Arc<Mutex<UserAllowIp>>;
+#[derive(Debug, Clone)]
+struct HandleContext {
+    pub gauge: GaugeHandle,
+    pub restricted_port: RestrictPortHandle,
+    pub allow_ip: AllowIpHandle,
+}
+
+type GaugeHandle = Arc<Mutex<UserGauge>>;
+type RestrictPortHandle = Arc<Mutex<UserRestrictedPort>>;
+type AllowIpHandle = Arc<Mutex<UserAllowIp>>;
 
 /// Throughput gauges toggle `/port` to restrict traffic on DDoS and relax the restriction periodically to check if the DDoS has stopped
 ///
@@ -102,57 +110,57 @@ pub type AllowIpHandle = Arc<Mutex<UserAllowIp>>;
 /// Admins check `/ports` to see what ports have been restricted to either monitor or debug
 ///
 /// Admins check `/packets` to check the received amount of packets on a specific port
-async fn serve(gauge: GaugeHandle, allow_ip: AllowIpHandle) -> anyhow::Result<()> {
+async fn serve(handle_context: HandleContext) -> anyhow::Result<()> {
     let router = Router::new()
         .route("/packets/:port", get(packets))
-        .with_state(gauge)
+        .with_state(handle_context.clone())
         .route("/ports", get(ports))
         .route("/port/:port", put(put_port))
         .route("/port/:port", delete(delete_port))
         .route("/ip/:ip", put(trust_ip))
         .route("/ip/:ip", delete(forget_ip))
-        .with_state(allow_ip);
+        .with_state(handle_context.clone());
     let listener = TcpListener::bind("127.0.0.1:6969").await?;
     axum::serve(listener, router).await?;
     Ok(())
 }
 
 /// List packets received of a port
-async fn packets(State(gauge): State<GaugeHandle>, Path(port): Path<u16>) -> Json<u64> {
-    let gauge = gauge.lock().unwrap();
+async fn packets(State(handle_context): State<HandleContext>, Path(port): Path<u16>) -> Json<u64> {
+    let gauge = handle_context.gauge.lock().unwrap();
     Json(gauge.packets(port))
 }
 
 /// List all the restricted ports
-async fn ports(State(allow_ip): State<AllowIpHandle>) -> Json<Vec<u16>> {
-    let allow_ip = allow_ip.lock().unwrap();
-    Json(allow_ip.restricted_ports())
+async fn ports(State(handle_context): State<HandleContext>) -> Json<Vec<u16>> {
+    let restricted_port = handle_context.restricted_port.lock().unwrap();
+    Json(restricted_port.restricted_ports())
 }
 
 /// Restrict a port
-async fn put_port(State(allow_ip): State<AllowIpHandle>, Path(port): Path<u16>) {
+async fn put_port(State(handle_context): State<HandleContext>, Path(port): Path<u16>) {
     info!("Restrict {port}");
-    let mut allow_ip = allow_ip.lock().unwrap();
-    allow_ip.insert_restricted_port(port);
+    let mut restricted_port = handle_context.restricted_port.lock().unwrap();
+    restricted_port.insert_restricted_port(port);
 }
 
 /// Relax a port
-async fn delete_port(State(allow_ip): State<AllowIpHandle>, Path(port): Path<u16>) {
+async fn delete_port(State(handle_context): State<HandleContext>, Path(port): Path<u16>) {
     info!("Relax {port}");
-    let mut allow_ip = allow_ip.lock().unwrap();
-    allow_ip.remove_restricted_port(port);
+    let mut restricted_port = handle_context.restricted_port.lock().unwrap();
+    restricted_port.remove_restricted_port(port);
 }
 
 /// Let this IP pass even if the local port is restricted
-async fn trust_ip(State(allow_ip): State<AllowIpHandle>, Path(ip): Path<IpAddr>) {
+async fn trust_ip(State(handle_context): State<HandleContext>, Path(ip): Path<IpAddr>) {
     info!("Trust {ip}");
-    let mut allow_ip = allow_ip.lock().unwrap();
+    let mut allow_ip = handle_context.allow_ip.lock().unwrap();
     allow_ip.insert_allowed_ip(ip);
 }
 
 /// Remove the privilege of this IP from being unrestricted
-async fn forget_ip(State(allow_ip): State<AllowIpHandle>, Path(ip): Path<IpAddr>) {
+async fn forget_ip(State(handle_context): State<HandleContext>, Path(ip): Path<IpAddr>) {
     info!("Forget {ip}");
-    let mut allow_ip = allow_ip.lock().unwrap();
+    let mut allow_ip = handle_context.allow_ip.lock().unwrap();
     allow_ip.remove_allowed_ip(ip);
 }

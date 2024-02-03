@@ -9,6 +9,7 @@ pub fn blocked(ip_hdr: &Ipv4Hdr) -> bool {
 }
 
 #[cfg(feature = "user")]
+#[derive(Debug)]
 pub struct UserBlockIp<'map> {
     map: aya::maps::HashMap<&'map mut aya::maps::MapData, u32, u32>,
 }

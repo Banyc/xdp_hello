@@ -4,3 +4,4 @@ pub mod address;
 pub mod allow_ip;
 pub mod block_ip;
 pub mod gauge;
+pub mod restricted_port;
