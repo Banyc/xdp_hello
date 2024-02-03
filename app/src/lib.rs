@@ -6,6 +6,8 @@ use aya::{
 use aya_log::BpfLogger;
 use log::{debug, warn};
 
+pub mod ddos_mitigation;
+
 pub fn spawn_bpf(iface: &str, bin: &str) -> Result<Bpf, anyhow::Error> {
     // Bump the memlock rlimit. This is needed for older kernels that don't use the
     // new memcg based accounting, see https://lwn.net/Articles/837122/
