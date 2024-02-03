@@ -22,7 +22,7 @@ impl<'map> UserBlockIp<'map> {
     }
 
     pub fn insert(&mut self, ip: std::net::Ipv4Addr) {
-        let ip: u32 = ip.try_into().unwrap();
+        let ip: u32 = ip.into();
         self.map.insert(ip, 0, 0).unwrap();
     }
 }
