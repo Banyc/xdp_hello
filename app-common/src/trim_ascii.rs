@@ -6,6 +6,8 @@
 /// # Examples
 ///
 /// ```
+/// use app_common::trim_ascii::trim_ascii_start;
+///
 /// assert_eq!(trim_ascii_start(b" \t hello world\n"), b"hello world\n");
 /// assert_eq!(trim_ascii_start(b"  "), b"");
 /// assert_eq!(trim_ascii_start(b""), b"");
@@ -33,7 +35,9 @@ pub const fn trim_ascii_start(b: &[u8]) -> &[u8] {
 /// # Examples
 ///
 /// ```
-/// assert_eq!(b"\r hello world\n ".trim_ascii_end(), b"\r hello world");
+/// use app_common::trim_ascii::trim_ascii_end;
+///
+/// assert_eq!(trim_ascii_end(b"\r hello world\n "), b"\r hello world");
 /// assert_eq!(trim_ascii_end(b"  "), b"");
 /// assert_eq!(trim_ascii_end(b""), b"");
 /// ```
@@ -61,6 +65,8 @@ pub const fn trim_ascii_end(b: &[u8]) -> &[u8] {
 /// # Examples
 ///
 /// ```
+/// use app_common::trim_ascii::trim_ascii;
+///
 /// assert_eq!(trim_ascii(b"\r hello world\n "), b"hello world");
 /// assert_eq!(trim_ascii(b"  "), b"");
 /// assert_eq!(trim_ascii(b""), b"");
