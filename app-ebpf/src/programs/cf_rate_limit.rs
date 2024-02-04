@@ -5,7 +5,6 @@ use app_common::{
     allow_ascii_ip::{ascii_ip_allowed, AsciiIp, NotAnAsciiIp},
     gauge::{increment_packets, MapInsertionError},
     restricted_port,
-    trim_ascii::{trim_ascii_end, trim_ascii_start},
 };
 use aya_bpf::{bindings::xdp_action, programs::XdpContext};
 use aya_log_ebpf::info;
@@ -15,7 +14,11 @@ use network_types::{
     tcp::TcpHdr,
 };
 
-use crate::{address::five_tuple, error::AbortMsg, mem::PointedOutOfRange};
+use crate::{
+    address::five_tuple,
+    error::AbortMsg,
+    mem::{find, PointedOutOfRange},
+};
 
 pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
     // Parse port number from the packet
@@ -40,48 +43,19 @@ pub fn main(ctx: &XdpContext) -> Result<u32, ParseError> {
         IpAddr::Ipv6(_) => Ipv6Hdr::LEN,
     };
     let tcp_data_start = EthHdr::LEN + ip_hdr_len + TcpHdr::LEN;
-    let Some(tcp_data_remaining) = ctx.data_end().checked_sub(tcp_data_start) else {
-        return Ok(xdp_action::XDP_PASS);
-    };
-    let tcp_data_remaining: &[u8] =
-        unsafe { slice::from_raw_parts(tcp_data_start as *const u8, tcp_data_remaining) };
-    const SRC_IP_HEADER_KEY: &str = "CF-Connecting-IP:";
-    let Some(ip_str_start) = tcp_data_remaining
-        .windows(SRC_IP_HEADER_KEY.len())
-        .position(|s| s == SRC_IP_HEADER_KEY.as_bytes())
-        .map(|x| x + SRC_IP_HEADER_KEY.len())
-    else {
-        return Ok(xdp_action::XDP_PASS);
-    };
-    // let ip_str_remaining = &tcp_data_remaining[ip_str_start..];
-    let Some(ip_str_remaining) = tcp_data_remaining.len().checked_sub(ip_str_start) else {
-        return Ok(xdp_action::XDP_PASS);
-    };
-    let ip_str_remaining = unsafe {
-        slice::from_raw_parts(
-            tcp_data_remaining
-                .as_ptr()
-                .offset(isize::try_from(ip_str_start).unwrap()),
-            ip_str_remaining,
-        )
-    };
-    let Some(ip_str_end) = ip_str_remaining.iter().position(|c| *c == b'\n') else {
-        return Ok(xdp_action::XDP_PASS);
-    };
-    // let ip_str = &ip_str_remaining[..ip_str_end];
-    let ip_str = unsafe { slice::from_raw_parts(ip_str_remaining.as_ptr(), ip_str_end) };
 
-    // Trim out the white spaces
-    let start = trim_ascii_start(ip_str);
-    let end = trim_ascii_end(ip_str);
-    // let ip_str = &ip_str[start..end];
-    let ip_str = unsafe { slice::from_raw_parts(ip_str.as_ptr(), end) };
-    let len = end.checked_sub(start).unwrap();
-    let ip_str = unsafe {
-        slice::from_raw_parts(ip_str.as_ptr().offset(isize::try_from(start).unwrap()), len)
+    const SRC_IP_HEADER_KEY: &str = "CF-Connecting-IP: ";
+    let Some(key_start) = find(ctx, tcp_data_start, SRC_IP_HEADER_KEY.as_bytes()) else {
+        return Ok(xdp_action::XDP_PASS);
+    };
+    let ip_start = key_start + SRC_IP_HEADER_KEY.len();
+    let Some(ip_end) = find(ctx, ip_start, b"\n") else {
+        return Ok(xdp_action::XDP_PASS);
     };
 
-    let ip_str = AsciiIp::from_ascii(ip_str)?;
+    let ip_str = AsciiIp::from_ascii(unsafe {
+        slice::from_raw_parts(ip_start as *const u8, ip_end - ip_start)
+    })?;
 
     // Only allow trusted source IPs
     let allowed = ascii_ip_allowed(&ip_str);

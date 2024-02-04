@@ -21,3 +21,25 @@ pub fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, PointedOut
 }
 #[derive(Debug)]
 pub struct PointedOutOfRange;
+
+pub fn find(ctx: &XdpContext, from_offset: usize, pat: &[u8]) -> Option<usize> {
+    let start = ctx.data() + from_offset;
+    let txt_len = ctx.data_end() - start;
+    if txt_len < pat.len() {
+        return None;
+    }
+
+    /* A loop to slide pat[] one by one */
+    'txt: for i in 0..=(txt_len - pat.len()).min(usize::MAX) {
+        /* For current index i, check for pattern match */
+        #[allow(clippy::needless_range_loop)]
+        for j in 0..pat.len().min(usize::MAX) {
+            let a: &u8 = unsafe { ref_at(ctx, from_offset + i + j) }.ok()?;
+            if *a != pat[j] {
+                continue 'txt;
+            }
+        }
+        return Some(i);
+    }
+    None
+}
